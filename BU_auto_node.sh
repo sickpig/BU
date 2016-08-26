@@ -107,7 +107,7 @@ cloning () {
 compiling () {
   echo -n "Compiling ... "
   cd $HOME/src/BU
-  patch -p1 < $HOME/rpc_raw_tx.diff
+  #patch -p1 < $HOME/rpc_raw_tx.diff
   ./autogen.sh
   ./configure --without-gui --without-upnp --disable-tests --disable-wallet --disable-zmq
   export NUMCPUS=`grep -c '^processor' /proc/cpuinfo`
@@ -206,5 +206,7 @@ echo "Finished."
 if [ "$REBOOT" == "1" ]; then
   echo "Rebooting now ..."
   reboot
+else
+  echo "To start your bitcoind: sudo su bitcoin -c '/usr/local/bin/bitcoind -datadir=${BU_HOME}/.bitcoin -daemon'"
 fi
 
