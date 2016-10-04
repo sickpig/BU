@@ -15,21 +15,41 @@
 set -eu
 
 #TODO read these pars from a conf file, ideally the JSON used in release signature. 
-BU_VER="0.12.1bu"
-BU_TAG="BU0.12.1b"
+BU_BRANCH="0.12.1bu"
+BU_TAG="bu0.12.1c"
+USR="testme"
+BU_REPO="https://github.com/BitcoinUnlimited/BitcoinUnlimited.git"
 BU_URL64="https://www.bitcoinunlimited.info/downloads/bitcoinUnlimited-0.12.1-linux64.tar.gz"
 BU_URL32="https://www.bitcoinunlimited.info/downloads/bitcoinUnlimited-0.12.1-linux32.tar.gz"
 BU_SUM64="34de171ac1b48b0780d68f3844c9fd2e8bfe6a7780b55e1f012067c2440ebd8a"
 BU_SUM32="984111483981bbfa5d33f40014336d74cbb263a51cb42a87e5d1871f88c14a7c"
-BU_HOME=/home/bitcoin
+BU_HOME="/home/$USR"
+
+SSH_KEY_PATH=/home/$USR/.ssh/id_rsa
+REMOTE_USR=auser
+REMOTE_HOST=trusted_host
+REMOTE_BLOCKCHAIN_PATH=path_to_the_blockchain
+
+sync_chain() {
+  echo "Start syncing the chain ..."
+
+  sudo -u $USR bash <<-EOH
+  rsync --progress -a -e "ssh -i $SSH_KEY_PATH" $REMOTE_USR@$REMOTE_HOST:$REMOTE_BLOCKCHAIN_PATH/blocks /home/$USR/.bitcoin
+  rsync --progress -a -e "ssh -i $SSH_KEY_PATH" $REMOTE_USR@$REMOTE_HOST:$REMOTE_BLOCKCHAIN_PATH/chainstate /home/$USR/.bitcoin
+  rsync --progress -a -e "ssh -i $SSH_KEY_PATH" $REMOTE_USR@$REMOTE_HOST:$REMOTE_BLOCKCHAIN_PATH/database /home/$USR/.bitcoin
+EOH
+  chown $USR.$USR -R /home/$USR/.bitcoin
+  echo "Synced!"
+}
 
 # default value for variuois mode
 DW_MODE=0
 CR_SWAP=1
 REBOOT=0
+SYNC=0
 
 # add getopts parsing
-while getopts "dnr" Opts; do
+while getopts "dnrs" Opts; do
   case $Opts in
     d)
       #Download mode activated
@@ -42,6 +62,10 @@ while getopts "dnr" Opts; do
     r)
       #reboot the machien at the end
       REBOOT=1
+      ;;
+    s)
+      #sync the chain
+      SYNC=1
       ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
@@ -59,28 +83,47 @@ check_root_sudo () {
 }
 
 check_tmux_screen () {
-  if [[ -v TMUX || -v STY ]]; then 
-    echo "TMUX/SCREEN detected"
-  else
-    echo "Please tun the script inside a terminal multiplexer (e.g. tmux, screen, ...)"; 
+  if [[ -v TERM && TERM == "screen" ]]; then
+    echo "Please run the script inside a terminal multiplexer (e.g. tmux, screen, ...)";
     echo "To install tmux use sudo apt-get install tmux" 
     exit 1;
+  else
+    echo "TMUX/SCREEN detected"
   fi
 }
 
+check_user_exists() {
+  user_exists=$(id -u $USR > /dev/null 2>&1; echo $?)
+  if [ "$user_exists" == "1" ]; then
+    echo "User $USR does not exist, create the account via adduser(8) before proceeding";
+    exit 1;
+  fi
+}
 #### main functions 
 
-install_prereq () {
+install_prereq_comp () {
   echo -n "Updating Ubuntu ... "
-  # removed ppa bitcon rep since wei don't need berkeley db 
 
   apt-get -y -qq update
   echo "done."
-  echo -n "Installing Bu prereq via apt-get ... "
-  sudo apt-get -qq install git
-  sudo apt-get -qq install build-essential libtool autotools-dev 
-  sudo apt-get -qq install automake pkg-config libssl-dev libevent-dev bsdmainutils libboost-all-dev
+  echo -n "Installing BU prereq via apt-get ..."
+  echo -en " done.\nInstalling git ..."
+  sudo apt-get -qq -y install git > /dev/null
+  echo -en " done.\nInstalling build-essentials and friends ..."
+  sudo apt-get -qq -y install build-essential libtool autotools-dev automake pkg-config > /dev/null
+  echo -en " done.\nInstalling helper libs ..."
+  sudo apt-get -qq -y install libssl-dev libevent-dev bsdmainutils libboost-all-dev > /dev/null
+  echo -n " done."
+}
+
+install_prereq_down () {
+  echo -n "Updating Ubuntu ... "
+
+  apt-get -y -qq update
   echo "done."
+  echo -n "Installing BU prereq via apt-get ..."
+  sudo apt-get -qq -y install curl > /dev/null
+  echo " done."
 }
 
 create_swap () {
@@ -97,21 +140,26 @@ create_swap () {
 
 
 cloning () {
-  echo -n "Cloning Bitcoin BU ... "
-  cd $HOME
+  echo "Cloning Bitcoin BU ... "
+  sudo -u $USR bash <<-EOH
+  cd /home/$USR
   mkdir -p ./src && cd ./src
-  git clone https://github.com/BitcoinUnlimited/BitcoinUnlimited.git BU 
+  git clone $BU_REPO BU > /dev/null
+  cd BU
+  git checkout $BU_BRANCH
+EOH
   echo "done."
 }
 
 compiling () {
   echo -n "Compiling ... "
-  cd $HOME/src/BU
-  #patch -p1 < $HOME/rpc_raw_tx.diff
+  sudo -u $USR bash <<-EOH
+  cd /home/$USR/src/BU
   ./autogen.sh
   ./configure --without-gui --without-upnp --disable-tests --disable-wallet --disable-zmq
-  export NUMCPUS=`grep -c '^processor' /proc/cpuinfo`
-  make -j$NUMCPUS
+  make -j$(grep -c '^processor' /proc/cpuinfo)
+EOH
+  cd /home/$USR/src/BU
   make install
   echo " done."
 }
@@ -123,7 +171,7 @@ downloading () {
   mkdir $tmp_dir
   cd $tmp_dir
   # TODO use a switch to explictly list all support arch
-  if [ "$(uname -i)" == "x86_64" ]; then
+  if [ "$(uname -m)" == "x86_64" ]; then
     bu_name="bu64.tar.gz"
     bu_url=$BU_URL64
     bu_sum=$BU_SUM64
@@ -132,7 +180,7 @@ downloading () {
     bu_url=$BU_URL32
     bu_sum=$BU_SUM32
   fi;  
-  curl -o $bu_name $bu_url
+  curl -s -L --max-redirs 2 -o $bu_name $bu_url
   echo " done."
   echo -n "Verify check sum ... "
   bu_real_sum=`sha256sum $bu_name | awk '{print $1}'`
@@ -146,17 +194,17 @@ downloading () {
   tmp_path=`tar tf $bu_name | head -n1 | awk -F '/' '{print $1}'`
   tar xf $bu_name 
   cp $tmp_path/bin/* /usr/local/bin 
+  #rm -rf $tmp_path
   echo " done."
 }
 
 setting_up () {
-  echo -n "Creating Bitcoin User ... "
-  useradd -m bitcoin
-  echo "done."
+  echo -n "Setting up bitcoind datadir and conf file ..."
+  echo " done."
   echo -n "Creating config ... "
-  su bitcoin -c "mkdir ${BU_HOME}/.bitcoin"
+  su $USR -c "mkdir ${BU_HOME}/.bitcoin"
   config="${BU_HOME}/.bitcoin/bitcoin.conf"
-  su bitcoin -c "touch $config"
+  su $USR -c "touch $config"
   echo "server=1" > $config
   echo "daemon=1" >> $config
   echo "connections=40" >> $config
@@ -167,7 +215,7 @@ setting_up () {
   echo "rpcpassword=$randPass" >> $config
   # set prune amount to size of `/` 60% (and then by /1000 to turn KB to MB) => /1666
   echo "prune="$(expr $(df | grep '/$' | tr -s ' ' | cut -d ' ' -f 2) / 1666) >> $config # safe enough for now
-  chown bitcoin.bitcoin -R $BU_HOME/.bitcoin
+  chown $USR.$USR -R $BU_HOME/.bitcoin
   echo "done."
 }
 
@@ -180,9 +228,12 @@ start_at_boot () {
   echo "done."
 }
 
+### main
 # mandatory checks 
+
 check_root_sudo
 check_tmux_screen
+check_user_exists
 
 # main 
 if [ "$CR_SWAP" == "1" ]; then
@@ -190,16 +241,22 @@ if [ "$CR_SWAP" == "1" ]; then
 fi;
 
 if [ "$DW_MODE" == "0" ]; then
-  install_prereq
+  install_prereq_comp
   cloning
   compiling
 else
+  install_prereq_down
   downloading
 fi;
 
 # starting box configuration
 setting_up
 start_at_boot
+
+# sync the blockchain this will take a long while
+if [ "$SYNC" == "1" ]; then
+  sync_chain
+fi;
 
 echo "Finished."
 
