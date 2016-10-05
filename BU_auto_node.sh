@@ -94,7 +94,7 @@ check_root_sudo () {
 }
 
 check_tmux_screen () {
-  if [[ -v TERM && TERM == "screen" ]]; then
+  if [[ -v TERM && "$TERM" != "screen" ]]; then
     echo "Please run the script inside a terminal multiplexer (e.g. tmux, screen, ...)";
     echo "To install tmux use sudo apt-get install tmux"
     exit 1;
