@@ -1,20 +1,26 @@
 #!/bin/bash
 #
 # v0.0.1
-# Installing BU on a new machine, configuring it, make it persistan to reboot 
+# Installing BU on a new machine, configuring it, make it persistan to reboot
 # Tested on Ubuntu 14.04 and 16.04 x86_64
 # inspired by https://raw.githubusercontent.com/XertroV/BitcoinAutoNode/master/bitcoinAutoNode.sh
 #
-# TODO add mechanism to fetch blockchain data from a remote provider (rsync + ssh, exchange keys)  
 # WARN if run by sudo we need to input the password from stdin on disable password prompt for sudoers
 #
 # -d download instead of compiling
-# -n avoid to create swap partition 
+# -n avoid to create swap partition
 # -r reboot at the end
+# -s enable the sync of the blockchain from trusted source
+# -p disable prune mode
+#
+# TODO
+# - add a conf file instead of using all these variables
+# - fetch a list of BU node to connect to
+# - check if there's enough space to store the blockchain
 
 set -eu
 
-#TODO read these pars from a conf file, ideally the JSON used in release signature. 
+#TODO read these pars from a conf file, ideally the JSON used in release signature.
 BU_BRANCH="0.12.1bu"
 BU_TAG="bu0.12.1c"
 USR="testme"
@@ -30,13 +36,13 @@ REMOTE_USR=auser
 REMOTE_HOST=trusted_host
 REMOTE_BLOCKCHAIN_PATH=path_to_the_blockchain
 
+
 sync_chain() {
   echo "Start syncing the chain ..."
 
   sudo -u $USR bash <<-EOH
   rsync --progress -a -e "ssh -i $SSH_KEY_PATH" $REMOTE_USR@$REMOTE_HOST:$REMOTE_BLOCKCHAIN_PATH/blocks /home/$USR/.bitcoin
   rsync --progress -a -e "ssh -i $SSH_KEY_PATH" $REMOTE_USR@$REMOTE_HOST:$REMOTE_BLOCKCHAIN_PATH/chainstate /home/$USR/.bitcoin
-  rsync --progress -a -e "ssh -i $SSH_KEY_PATH" $REMOTE_USR@$REMOTE_HOST:$REMOTE_BLOCKCHAIN_PATH/database /home/$USR/.bitcoin
 EOH
   chown $USR.$USR -R /home/$USR/.bitcoin
   echo "Synced!"
@@ -47,9 +53,10 @@ DW_MODE=0
 CR_SWAP=1
 REBOOT=0
 SYNC=0
+PRUNE=1
 
 # add getopts parsing
-while getopts "dnrs" Opts; do
+while getopts "dnrsp" Opts; do
   case $Opts in
     d)
       #Download mode activated
@@ -67,13 +74,17 @@ while getopts "dnrs" Opts; do
       #sync the chain
       SYNC=1
       ;;
+    p)
+      #toggle prune mode
+      PRUNE=0
+      ;;
     \?)
       echo "Invalid option: -$OPTARG" >&2
       ;;
   esac
 done
 
-### helper functions 
+### helper functions
 
 check_root_sudo () {
   if [ "$(whoami)" != "root" ]; then
@@ -85,10 +96,10 @@ check_root_sudo () {
 check_tmux_screen () {
   if [[ -v TERM && TERM == "screen" ]]; then
     echo "Please run the script inside a terminal multiplexer (e.g. tmux, screen, ...)";
-    echo "To install tmux use sudo apt-get install tmux" 
+    echo "To install tmux use sudo apt-get install tmux"
     exit 1;
   else
-    echo "TMUX/SCREEN detected"
+    echo "Tmux/Screen detected"
   fi
 }
 
@@ -99,10 +110,12 @@ check_user_exists() {
     exit 1;
   fi
 }
-#### main functions 
+
+#### main functions
 
 install_prereq_comp () {
   echo -n "Updating Ubuntu ... "
+  # removed ppa bitcon rep since wei don't need berkeley db
 
   apt-get -y -qq update
   echo "done."
@@ -118,6 +131,7 @@ install_prereq_comp () {
 
 install_prereq_down () {
   echo -n "Updating Ubuntu ... "
+  # removed ppa bitcon rep since wei don't need berkeley db
 
   apt-get -y -qq update
   echo "done."
@@ -133,7 +147,7 @@ create_swap () {
   fallocate -l ${SWAP_SIZE}M /swapfile
   chmod 600 /swapfile
   mkswap /swapfile
-  swapon /swapfile 
+  swapon /swapfile
   echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
   echo "done."
 }
@@ -179,7 +193,7 @@ downloading () {
     bu_name="bu32.tar.gz"
     bu_url=$BU_URL32
     bu_sum=$BU_SUM32
-  fi;  
+  fi;
   curl -s -L --max-redirs 2 -o $bu_name $bu_url
   echo " done."
   echo -n "Verify check sum ... "
@@ -187,34 +201,44 @@ downloading () {
   if [ "$bu_real_sum" != "$bu_sum" ]; then
     echo "SHA256 mismatch! Aborting!"
     echo "Expected archive sha256 checksum is $bu_sum, whereas this what we got: $bu_real_sum"
-  fi; 
+  fi;
   echo " done."
 
   echo -n "Installing in /usr/local/bin ... "
   tmp_path=`tar tf $bu_name | head -n1 | awk -F '/' '{print $1}'`
-  tar xf $bu_name 
-  cp $tmp_path/bin/* /usr/local/bin 
-  #rm -rf $tmp_path
+  tar xf $bu_name
+  cp $tmp_path/bin/* /usr/local/bin
+  rm -rf $tmp_path
   echo " done."
 }
 
 setting_up () {
+
   echo -n "Setting up bitcoind datadir and conf file ..."
   echo " done."
   echo -n "Creating config ... "
-  su $USR -c "mkdir ${BU_HOME}/.bitcoin"
+  su $USR -c "mkdir -p ${BU_HOME}/.bitcoin"
+
   config="${BU_HOME}/.bitcoin/bitcoin.conf"
   su $USR -c "touch $config"
   echo "server=1" > $config
   echo "daemon=1" >> $config
+  echo "checkblocks=7" >> $config
+  echo "logtimemicros=1" >> $config
   echo "connections=40" >> $config
   echo "dbcache=200" >> $config
+
+  # rpc credentials
   randUser=`< /dev/urandom tr -dc A-Za-z0-9 | head -c30`
   randPass=`< /dev/urandom tr -dc A-Za-z0-9 | head -c30`
   echo "rpcuser=$randUser" >> $config
   echo "rpcpassword=$randPass" >> $config
-  # set prune amount to size of `/` 60% (and then by /1000 to turn KB to MB) => /1666
-  echo "prune="$(expr $(df | grep '/$' | tr -s ' ' | cut -d ' ' -f 2) / 1666) >> $config # safe enough for now
+
+  # set prune amount to size of `/` 70% free space (and then by /1000 to turn KB to MB) => ~ /1429
+  if [ "$PRUNE" == "1" ]; then
+    echo "prune="$(expr $(df | grep '/$' | tr -s ' ' | cut -d ' ' -f 4) / 1429) >> $config # safe enough for now
+  fi;
+
   chown $USR.$USR -R $BU_HOME/.bitcoin
   echo "done."
 }
@@ -229,13 +253,13 @@ start_at_boot () {
 }
 
 ### main
-# mandatory checks 
+# mandatory checks
 
 check_root_sudo
 check_tmux_screen
 check_user_exists
 
-# main 
+# main
 if [ "$CR_SWAP" == "1" ]; then
   create_swap
 fi;
