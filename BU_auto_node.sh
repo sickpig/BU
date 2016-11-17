@@ -247,7 +247,7 @@ setting_up () {
 start_at_boot () {
   echo -n "Setting bitcoind to start at boot ... "
   LN=`wc -l /etc/rc.local | awk '{print $1}'`
-  BU_INIT="su bitcoin -c '/usr/local/bin/bitcoind -datadir=${BU_HOME}/.bitcoin -daemon'"
+  BU_INIT="su ${USR} -c '/usr/local/bin/bitcoind -datadir=${BU_HOME}/.bitcoin -daemon'"
   sed -i "${LN}i $BU_INIT" /etc/rc.local
   echo "done."
 }
@@ -288,6 +288,6 @@ if [ "$REBOOT" == "1" ]; then
   echo "Rebooting now ..."
   reboot
 else
-  echo "To start your bitcoind: sudo su bitcoin -c '/usr/local/bin/bitcoind -datadir=${BU_HOME}/.bitcoin -daemon'"
+  echo "To start your bitcoind: sudo su ${USR} -c '/usr/local/bin/bitcoind -datadir=${BU_HOME}/.bitcoin -daemon'"
 fi
 
