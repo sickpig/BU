@@ -1,8 +1,8 @@
 How to run your BU node with TOR on Ubuntu/Debian
-#################################################
+=================================================
 
-0) Install Bitcoin Unlimited
-----------------------------
+Install Bitcoin Unlimited
+-------------------------
 
 Go to:
 
@@ -23,8 +23,8 @@ that you should execute from a console:
 	tar xf bitcoinUnlimited-1.0.1-linux64.tar.gz
 	sudo cp bitcoinUnlimited-1.0.1/bin/* /usr/local/bin
 
-1) Install Tor
---------------
+Install Tor
+-----------
 
 If you're using Ubuntu >= 16.04 just do `sudo apt install tor`.
 
@@ -51,8 +51,8 @@ You can install it with the following commands:
 	sudo apt-get update
 	sudo apt-get install tor
 
-2) Make bitcoind work with Tor
-------------------------------
+Make bitcoind work with Tor
+---------------------------
 
 Execute this command
 
@@ -90,8 +90,8 @@ you should get an output like this one
 Pick the onion domain and verify on bitnodes.21.co if you it is
 reachable.
 
-3) What to do in case of a DDoS against your node
--------------------------------------------------
+What to do in case of a DDoS against your node
+----------------------------------------------
 
 Stop your node:
 
