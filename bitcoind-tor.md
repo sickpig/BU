@@ -23,10 +23,21 @@ that you should execute from a console:
 	tar xf bitcoinUnlimited-1.0.1-linux64.tar.gz
 	sudo cp bitcoinUnlimited-1.0.1/bin/* /usr/local/bin
 
+If you want to make bitcoind start at boot just add this command
+as the penultimate line of `/etc/rc.local`
+
+        su your_user_name -c "/usr/local/bin/bitcoind -daemon"
+
+
 Install Tor
 -----------
 
-If you're using Ubuntu >= 16.04 just do `sudo apt install tor`.
+(Warning you don't need to install the Tor browser bundle but
+the Tor client.)
+
+If you're using Ubuntu >= 16.04 just do:
+
+        sudo apt install tor
 
 If you are using Debian stable (Jessie) or Ubuntu < 16.04
 please follow the instructions below.
