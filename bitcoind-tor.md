@@ -35,12 +35,12 @@ for a more detailed explanation)
 Install Tor
 -----------
 
-(Warning you don't need to install the Tor browser bundle but
+(warning: you don't need to install the Tor browser bundle but
 the Tor client.)
 
 If you're using Ubuntu >= 16.04 just do:
 
-        sudo apt install tor
+        sudo apt-get install tor
 
 If you are using Debian stable (Jessie) or Ubuntu < 16.04
 please follow the instructions below.
