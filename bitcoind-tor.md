@@ -28,6 +28,9 @@ as the penultimate line of `/etc/rc.local`
 
         su your_user_name -c "/usr/local/bin/bitcoind -daemon"
 
+(if you're using Ubuntu for your machine you could install BU via its
+PPA Ubuntu repositories, see: https://github.com/BitcoinUnlimited/BitcoinUnlimited/blob/release/README.md
+for a more detailed explanation)
 
 Install Tor
 -----------
